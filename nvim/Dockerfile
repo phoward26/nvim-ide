@@ -3,12 +3,12 @@
 # @author Maciej Bedra
 
 # Debian image as base (unstable for newest software).
-FROM debian:sid-20211220
+FROM debian:bullseye
 
 # Set image locale.
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
-ENV TZ=Europe/Warsaw
+ENV TZ=America/Chicago
 
 # Expose some ports to host by default.
 EXPOSE 8080 8081 8082 8083 8084 8085
@@ -39,7 +39,7 @@ ARG GIT_FLOW_DIR='gitflow-avh'
 # 11. npm for NodeJS.
 # 12. tzdata to set default container timezone.
 # 13. Everything needed to install Neovim from source.
-RUN apt-get update && apt-get -y install curl fzf ripgrep tree git xclip python3 python3-pip nodejs npm tzdata ninja-build gettext libtool libtool-bin autoconf automake cmake g++ pkg-config zip unzip
+RUN apt-get update && apt-get -y install curl fzf ripgrep tree git xclip python3 python3-pip python3-venv nodejs npm tzdata ninja-build gettext libtool libtool-bin autoconf automake cmake g++ pkg-config wget zip unzip
 
 # Cooperate Neovim with Python 3.
 RUN pip3 install pynvim
@@ -48,34 +48,41 @@ RUN pip3 install pynvim
 RUN npm i -g neovim
 
 # Install Neovim from source.
-RUN mkdir -p /root/TMP
-RUN cd /root/TMP && git clone https://github.com/neovim/neovim
-RUN cd /root/TMP/neovim && git checkout stable && make -j4 && make install
-RUN rm -rf /root/TMP
+RUN mkdir -p /root/TMP && \ 
+cd /root/TMP && wget -O nvim.zip https://github.com/neovim/neovim/archive/refs/tags/stable.zip && \
+unzip nvim.zip && cd neovim-stable && \
+make CMAKE_BUILD_TYPE=RelWithDebInfo -j9 && \
+make install && \
+rm -rf /root/TMP 
+
+# Install NvChad
+RUN git clone https://github.com/NvChad/NvChad ~/.config/nvim && \
+mkdir -p /root/TMP && \
+git clone https://github.com/phoward26/my-config-files /root/TMP && \
+cp -r /root/TMP/nvim ~/.config && \
+cp /root/TMP/.bashrc ~ && \
+rm -rf /root/TMP
 
 # Create directory for Neovim spell check dictionaries.
 RUN mkdir -p /root/.local/share/nvim/site/spell
 
 # Copy Neovim dictionaries.
-COPY ./spell/ /root/.local/share/nvim/site/spell/
+# COPY ./spell/ /root/.local/share/nvim/site/spell/
 
 # Install Vim Plug.
-RUN curl -fLo /root/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+# RUN curl -fLo /root/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 
 # Create directory for Neovim configuration files.
-RUN mkdir -p /root/.config/nvim
-
-# Copy Neovim configuration files.
-COPY ./config/ /root/.config/nvim/
+# RUN mkdir -p /root/.config/nvim
 
 # Install Neovim extensions.
-RUN nvim --headless +PlugInstall +qall
+# RUN nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerSync'
 
 # Create directory for Neovim COC extensions.
 RUN mkdir -p /root/.config/coc/extensions
 
 # Install Neovim COC extensions.
-RUN cd /root/.config/coc/extensions && npm install $COC --global --only=prod
+# RUN cd /root/.config/coc/extensions && npm install $COC --global --only=prod
 
 # Create TMP directory
 RUN mkdir -p /root/TMP
@@ -92,7 +99,7 @@ RUN cd /root/TMP/$GIT_FLOW_DIR && git checkout master && make install
 RUN rm -rf /root/TMP
 
 # Bash aliases
-COPY ./home/ /root/
+# COPY ./home/ /root/
 
 # Create directory for projects (there should be mounted from host).
 RUN mkdir -p /root/workspace
