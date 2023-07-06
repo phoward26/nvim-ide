@@ -1,30 +1,26 @@
-# Docker file for base Neovim image.
-#
-# @author Maciej Bedra
+# Dockerfile for basic neovim development environment
+# Automatically includes support for linting and formatting of c++, lua, cmake, dockerfiles
+# Uses NvChad as a basis and implements all custom extras in the lua/custom directory
 
-# Debian image as base (unstable for newest software).
-FROM debian:bullseye
 
+# custom image of ubuntu 23.04 with opencv 4.7.0 built from scratch
+FROM ubuntu:22.04
 # Set image locale.
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
+RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+RUN echo "$TZ" > /etc/timezone
 ENV TZ=America/Chicago
 
 # Expose some ports to host by default.
-EXPOSE 8080 8081 8082 8083 8084 8085
+EXPOSE 8080 8081 8082 8083 8084 8085 22
 
-# Define which Neovim COC extensions should be installed.
-ARG COC='coc-css coc-eslint coc-html coc-json coc-sh coc-sql coc-tsserver coc-yaml'
-
-# Lazygit variables
-ARG LG='lazygit'
-ARG LG_GITHUB='https://github.com/jesseduffield/lazygit/releases/download/v0.31.4/lazygit_0.31.4_Linux_x86_64.tar.gz'
-ARG LG_ARCHIVE='lazygit.tar.gz'
-
-# GIT Flow variables
+# Program aruments
 ARG GIT_FLOW_GITHUB='https://github.com/petervanderdoes/gitflow-avh.git'
-ARG GIT_FLOW_DIR='gitflow-avh'
-
+ARG NVCHAD_GITHUB='https://github.com/NvChad/NvChad'
+ARG CONFIG_GITHUB='https://github.com/phoward26/my-config-files' 
+ARG NVIM_RELEASE='https://github.com/neovim/neovim/archive/refs/tags/stable.zip' 
+ARG DEBIAN_FRONTEND=noninteractive  
 # Update repositories and install software:
 # 1. curl.
 # 2. fzf for fast file search.
@@ -39,70 +35,32 @@ ARG GIT_FLOW_DIR='gitflow-avh'
 # 11. npm for NodeJS.
 # 12. tzdata to set default container timezone.
 # 13. Everything needed to install Neovim from source.
-RUN apt-get update && apt-get -y install curl fzf ripgrep tree git xclip python3 python3-pip python3-venv nodejs npm tzdata ninja-build gettext libtool libtool-bin autoconf automake cmake g++ pkg-config wget zip unzip
+RUN --mount=type=cache,target=/var/cache/apt apt-get update && apt-get -y install curl fzf ripgrep tree git xclip python3 python3-pip python3-venv nodejs npm tzdata ninja-build gettext libtool libtool-bin autoconf automake cmake g++ pkg-config wget zip unzip openssh-server curl
 
-# Cooperate Neovim with Python 3.
-RUN pip3 install pynvim
-
-# Cooperate NodeJS with Neovim.
-RUN npm i -g neovim
+RUN useradd -ms /bin/bash -G sudo patrick
+RUN mkdir -p /home/patrick/.ssh
+RUN curl -o /home/patrick/.ssh/authorized_keys  https://github.com/phoward26.keys && \
+chmod 0600 /home/patrick/.ssh/authorized_keys && \
+chown -R patrick:patrick /home/patrick/.ssh
+RUN service ssh start
 
 # Install Neovim from source.
-RUN mkdir -p /root/TMP && \ 
-cd /root/TMP && wget -O nvim.zip https://github.com/neovim/neovim/archive/refs/tags/stable.zip && \
-unzip nvim.zip && cd neovim-stable && \
-make CMAKE_BUILD_TYPE=RelWithDebInfo -j9 && \
-make install && \
-rm -rf /root/TMP 
+WORKDIR /root/TMP
+RUN wget -O nvim.zip ${NVIM_RELEASE} && \
+unzip -q nvim.zip && cd neovim-stable && \
+make CMAKE_BUILD_TYPE=RelWithDebInfo -j $(nproc --all) && \
+make install
 
 # Install NvChad
-RUN git clone https://github.com/NvChad/NvChad ~/.config/nvim && \
-mkdir -p /root/TMP && \
-git clone https://github.com/phoward26/my-config-files /root/TMP && \
-cp -r /root/TMP/nvim ~/.config && \
-cp /root/TMP/.bashrc ~ && \
-rm -rf /root/TMP
-
-# Create directory for Neovim spell check dictionaries.
-RUN mkdir -p /root/.local/share/nvim/site/spell
-
-# Copy Neovim dictionaries.
-# COPY ./spell/ /root/.local/share/nvim/site/spell/
-
-# Install Vim Plug.
-# RUN curl -fLo /root/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-
-# Create directory for Neovim configuration files.
-# RUN mkdir -p /root/.config/nvim
-
-# Install Neovim extensions.
-# RUN nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerSync'
-
-# Create directory for Neovim COC extensions.
-RUN mkdir -p /root/.config/coc/extensions
-
-# Install Neovim COC extensions.
-# RUN cd /root/.config/coc/extensions && npm install $COC --global --only=prod
-
-# Create TMP directory
-RUN mkdir -p /root/TMP
-
-# Install Lazygit from binary
-RUN cd /root/TMP && curl -L -o $LG_ARCHIVE $LG_GITHUB
-RUN cd /root/TMP && tar xzvf $LG_ARCHIVE && mv $LG /usr/bin/
-
-# Install GIT Flow
-RUN cd /root/TMP && git clone $GIT_FLOW_GITHUB
-RUN cd /root/TMP/$GIT_FLOW_DIR && git checkout master && make install
-
-# Delete TMP directory
+RUN git clone ${NVCHAD_GITHUB} /home/patrick/.config/nvim && \
+git clone ${CONFIG_GITHUB} /root/TMP/config && \
+cp -r /root/TMP/config/nvim /home/patrick/.config && \
+cp /root/TMP/config/.bashrc /home/patrick/
 RUN rm -rf /root/TMP
 
+RUN chown -R patrick:patrick /home/patrick
 # Bash aliases
 # COPY ./home/ /root/
-
-# Create directory for projects (there should be mounted from host).
-RUN mkdir -p /root/workspace
 
 # Set default location after container startup.
 WORKDIR /root/workspace
